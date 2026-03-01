@@ -52,14 +52,13 @@ export default function AgentChat() {
 
   const voice = useVoice({ onAudioCaptured });
 
-  // PTT: 按住录音，松开发送
-  const handlePttStart = useCallback(() => {
+  const handleStartRecording = useCallback(() => {
     if (voice.status !== "idle" || !needsVoice) return;
     voice.unlockAudio();
     voice.startRecording();
   }, [voice, needsVoice]);
 
-  const handlePttEnd = useCallback(() => {
+  const handleStopRecording = useCallback(() => {
     if (voice.status !== "recording") return;
     voice.stopRecording();
   }, [voice]);
@@ -257,8 +256,8 @@ export default function AgentChat() {
             <VoiceIndicator
               status={voice.status}
               needsVoice={needsVoice}
-              onPttStart={handlePttStart}
-              onPttEnd={handlePttEnd}
+              onStartRecording={handleStartRecording}
+              onStopRecording={handleStopRecording}
             />
           </div>
         )}
