@@ -54,7 +54,6 @@ export default function AgentChat() {
 
   const handleStartRecording = useCallback(() => {
     if (voice.status !== "idle" || !needsVoice) return;
-    voice.unlockAudio();
     voice.startRecording();
   }, [voice, needsVoice]);
 
