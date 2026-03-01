@@ -17,6 +17,10 @@ function detectMimeType(): string {
   return "audio/webm";
 }
 
+// Minimal silent WAV (44 bytes) — used to "bless" the Audio element on mobile
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
 export type VoiceStatus = "idle" | "recording" | "processing" | "playing";
 
 interface UseVoiceOptions {
@@ -30,7 +34,14 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Single persistent Audio element — created once, reused for all playback.
+  // Mobile browsers require .play() to originate from a user gesture;
+  // once the element is "blessed" via unlockAudio(), subsequent .src changes
+  // + .play() calls work even outside gesture context.
+  const persistentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentBlobUrlRef = useRef<string | null>(null);
+
   const audioQueueRef = useRef<string[]>([]);
   const isPlayingQueueRef = useRef(false);
   const isFinalReceivedRef = useRef(false);
@@ -46,6 +57,37 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
       streamRef.current = null;
     }
   }, []);
+
+  const revokeCurrentUrl = useCallback(() => {
+    if (currentBlobUrlRef.current) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = null;
+    }
+  }, []);
+
+  const getAudio = useCallback((): HTMLAudioElement => {
+    if (!persistentAudioRef.current) {
+      persistentAudioRef.current = new Audio();
+    }
+    return persistentAudioRef.current;
+  }, []);
+
+  /**
+   * Unlock audio playback on mobile browsers.
+   * MUST be called synchronously from a user gesture handler (click/touchend).
+   * Plays a silent WAV to "bless" the persistent Audio element so that
+   * future .play() calls succeed even outside gesture context.
+   */
+  const unlockAudio = useCallback(() => {
+    const audio = getAudio();
+    audio.src = SILENT_WAV;
+    audio.play().then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+    }).catch(() => {
+      // Unlock attempt failed — will retry on next user gesture
+    });
+  }, [getAudio]);
 
   /** 按下开始录音 */
   const startRecording = useCallback(async () => {
@@ -94,7 +136,7 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
     }
   }, [stopStream, updateStatus]);
 
-  /** 播放 AI 回复 */
+  /** 播放 AI 回复 (single audio, non-queued) */
   const playAudio = useCallback((base64: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       // 如果正在录音，先停掉（丢弃）
@@ -107,33 +149,40 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
       stopStream();
 
       updateStatus("playing");
+      revokeCurrentUrl();
+
       const audioBytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       const blob = new Blob([audioBytes], { type: "audio/wav" });
       const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
+      currentBlobUrlRef.current = url;
+
+      const audio = getAudio();
 
       const cleanup = () => {
-        URL.revokeObjectURL(url);
-        audioRef.current = null;
+        revokeCurrentUrl();
         updateStatus("idle");
       };
 
       audio.onended = () => { cleanup(); resolve(); };
       audio.onerror = () => { cleanup(); reject(new Error("音频播放失败")); };
+      audio.src = url;
       audio.play().catch(reject);
     });
-  }, [stopStream, updateStatus]);
+  }, [stopStream, updateStatus, revokeCurrentUrl, getAudio]);
+
   /** 清空音频队列 */
   const flushQueue = useCallback(() => {
     audioQueueRef.current = [];
     isPlayingQueueRef.current = false;
     isFinalReceivedRef.current = false;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
+    revokeCurrentUrl();
+    const audio = persistentAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
     }
-  }, []);
+  }, [revokeCurrentUrl]);
 
   /** 播放队列中的下一个音频 */
   const playNextInQueue = useCallback(() => {
@@ -147,31 +196,27 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
       return;
     }
 
+    revokeCurrentUrl();
+
     const base64 = audioQueueRef.current.shift()!;
     const audioBytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const blob = new Blob([audioBytes], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audioRef.current = audio;
+    currentBlobUrlRef.current = url;
 
-    const cleanup = () => {
-      URL.revokeObjectURL(url);
-      audioRef.current = null;
-    };
+    const audio = getAudio();
 
     audio.onended = () => {
-      cleanup();
       playNextInQueue();
     };
     audio.onerror = () => {
-      cleanup();
       playNextInQueue();
     };
+    audio.src = url;
     audio.play().catch(() => {
-      cleanup();
       playNextInQueue();
     });
-  }, [updateStatus]);
+  }, [updateStatus, revokeCurrentUrl, getAudio]);
 
   /** 将音频加入队列并播放 */
   const queueAudio = useCallback((base64: string, isFinal: boolean) => {
@@ -206,7 +251,10 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
     return () => {
       stopStream();
       flushQueue();
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      if (persistentAudioRef.current) {
+        persistentAudioRef.current.pause();
+        persistentAudioRef.current = null;
+      }
     };
   }, [stopStream]);
 
@@ -219,5 +267,6 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
     flushQueue,
     setProcessing,
     setIdle,
+    unlockAudio,
   };
 }

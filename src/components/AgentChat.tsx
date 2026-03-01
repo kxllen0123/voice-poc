@@ -55,6 +55,7 @@ export default function AgentChat() {
   // PTT: 按住录音，松开发送
   const handlePttStart = useCallback(() => {
     if (voice.status !== "idle" || !needsVoice) return;
+    voice.unlockAudio();
     voice.startRecording();
   }, [voice, needsVoice]);
 
@@ -184,16 +185,16 @@ export default function AgentChat() {
     sendToAgentRef.current = sendToAgent;
   }, [sendToAgent]);
 
-  // 初始化：触发问候
-  useEffect(() => {
+  const handleStart = useCallback(() => {
     if (initialized) return;
+    voice.unlockAudio();
     setInitialized(true);
     const formData = new FormData();
     formData.append("inputType", "text");
     formData.append("text", "");
     sendToAgent(formData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized]);
+  }, [initialized, sendToAgent, voice]);
 
   // ---------- report generation ----------
   // When phase becomes generating_report and voice finishes, auto-trigger report
@@ -269,13 +270,17 @@ export default function AgentChat() {
           </div>
         )}
 
-        {/* Loading state overlay */}
         {!initialized && (
           <div className="absolute inset-0 flex items-center justify-center bg-black z-30">
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="text-4xl">🎙️</div>
-              <p className="text-[15px] text-white/30">正在启动助手...</p>
-            </div>
+            <button
+              type="button"
+              onClick={handleStart}
+              className="flex flex-col items-center gap-4 text-center active:scale-95 transition-transform"
+            >
+              <div className="text-5xl">🎙️</div>
+              <p className="text-[16px] font-medium text-white/80">点击开始检测</p>
+              <p className="text-[13px] text-white/30">轻触以启动语音助手</p>
+            </button>
           </div>
         )}
 
