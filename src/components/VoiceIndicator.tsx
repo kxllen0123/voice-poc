@@ -27,15 +27,33 @@ export default function VoiceIndicator({
 }: VoiceIndicatorProps) {
   const config = STATUS_CONFIG[status];
   const isPressing = useRef(false);
+  const isTouchRef = useRef(false);
 
-  const handleStart = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (!needsVoice || status !== "idle") return;
+    isTouchRef.current = true;
+    isPressing.current = true;
+    onPttStart();
+  }, [needsVoice, status, onPttStart]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (!isPressing.current) return;
+    isPressing.current = false;
+    onPttEnd();
+  }, [onPttEnd]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isTouchRef.current) return;
     e.preventDefault();
     if (!needsVoice || status !== "idle") return;
     isPressing.current = true;
     onPttStart();
   }, [needsVoice, status, onPttStart]);
 
-  const handleEnd = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+  const handleMouseEnd = useCallback((e: React.MouseEvent) => {
+    if (isTouchRef.current) { isTouchRef.current = false; return; }
     e.preventDefault();
     if (!isPressing.current) return;
     isPressing.current = false;
@@ -70,14 +88,14 @@ export default function VoiceIndicator({
   return (
     <button
       type="button"
-      onTouchStart={handleStart}
-      onTouchEnd={handleEnd}
-      onTouchCancel={handleEnd}
-      onMouseDown={handleStart}
-      onMouseUp={handleEnd}
-      onMouseLeave={handleEnd}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseEnd}
+      onMouseLeave={handleMouseEnd}
       className={`
-        flex items-center gap-2.5 rounded-full backdrop-blur-sm px-5 py-2.5
+        flex items-center justify-center gap-2.5 rounded-full backdrop-blur-sm min-w-[160px] min-h-[48px] px-6 py-3
         select-none touch-none transition-all duration-150
         ${status === "recording"
           ? "bg-red-500/30 border border-red-400/50 scale-110"
