@@ -1,0 +1,168 @@
+system: |
+  你是一个专业的尘螨防控AI助手。你正在语音指导用户完成家庭尘螨风险点的信息采集。
+
+  规则：
+  1. 使用简洁的口语化中文
+  2. 每次回复控制在2-3句话
+  3. 语气亲切专业，像一个耐心的家庭健康顾问
+  4. 只回答与尘螨防控相关的问题，其他问题礼貌拒绝
+  5. 回答完用户的问题后，主动引导回到当前流程步骤
+
+greeting: |
+  请用温和的语气问候用户，然后询问他们家的房屋结构。
+  需要了解：
+  1. 几室几厅
+  2. 是否有儿童房
+  3. 是否有沙发
+  简洁自然地一次性问出来。
+
+parse_layout: |
+  根据用户的回答，提取房屋结构信息。以JSON格式返回：
+  {
+    "bedrooms": number,
+    "livingRooms": number,
+    "hasChildRoom": boolean,
+    "hasSofa": boolean,
+    "otherNotes": "string"
+  }
+
+  如果用户的回答不完整或含糊，返回你能确定的部分，不确定的用合理默认值。
+  只返回JSON，不要其他文字。
+
+generate_steps: |
+  根据以下房屋结构，生成尘螨风险点检查步骤列表。
+
+  房屋结构：{layout}
+
+  每个步骤包含：场所(location)、拍摄目标(target)、说明(description)
+
+  严格规则：
+  1. 每个卧室生成一个步骤，target 必须是"床"，要求拍摄被子、枕头、床单、床垫
+  2. 仅当 hasSofa 为 true 时，生成客厅沙发步骤，target 必须是"沙发"
+  3. 如果 hasSofa 为 false，不要生成任何客厅相关步骤
+  4. 如果 hasChildRoom 为 true，其中一个卧室标记为"儿童房"
+  5. 不要生成地毯、窗帘、毛绒玩具等其他步骤
+  6. 不要凭空添加用户没有的房间
+
+  target 字段只允许以下值："床"、"沙发"
+
+  以JSON数组格式返回：
+  [{{"id": "step_1", "location": "主卧室", "target": "床", "description": "请拍摄主卧室的床，包括被子、枕头、床单和床垫"}}]
+
+  按检查顺序排列。只返回JSON数组。
+
+guide: |
+  请语音指导用户前往下一个检查场所进行拍照。
+
+  当前步骤：第 {currentStep} 步，共 {totalSteps} 步
+  场所：{location}
+  拍摄目标：{target}
+  说明：{description}
+
+  用亲切的语气告诉用户要去哪里、拍什么。提醒他们准备好后按拍照按钮。
+
+validate_photo: |
+  分析这张照片，判断是否满足拍摄要求。
+
+  要求拍摄的目标：{target}（位于{location}）
+
+  请判断：
+  1. 照片中是否包含目标物品？
+  2. 照片是否清晰？
+  3. 拍摄角度是否能看到物品的材质和细节？
+
+  以JSON格式返回：
+  {{"valid": boolean, "reason": "string"}}
+
+  如果不合格，reason 中说明原因和改进建议。只返回JSON。
+
+identify_items: |
+  仔细分析这张照片中的{target}，只识别以下必查物品的材质和状况。
+
+  场所：{location}
+  必查物品：{requiredItems}
+
+  严格规则：
+  1. 只识别上面列出的必查物品，不要添加其他物品
+  2. 每个必查物品都必须出现在结果中
+  3. 如果照片中看不清某个物品，material 填"需确认"，condition 填"未能清晰辨认"
+
+  以JSON数组格式返回：
+  [{{"name": "被子", "material": "纯棉", "condition": "使用良好", "confirmed": false}}]
+
+  只返回JSON数组，只包含必查物品。
+
+confirm_materials: |
+  AI识别出以下物品和材质，请口语化地告诉用户识别结果，并请用户确认是否正确：
+
+  {items}
+
+  如果有多个物品，逐个说明。让用户告诉你哪些对、哪些需要纠正。
+
+ask_frequency: |
+  现在需要询问用户以下物品的清洗频率：
+
+  {items}
+
+  逐个询问每个物品多久清洗一次（每周/每两周/每月/每季度等）。语气自然口语化。
+
+generate_report: |
+  根据以下采集到的全部数据，生成尘螨风险评估报告。
+
+  采集数据：
+  {collectedData}
+
+  对每个物品评估：
+  1. 材质是否容易滋生尘螨（纯棉>涤纶>丝绸 风险递减）
+  2. 清洗频率是否足够
+  3. 给出改进建议
+
+  清洗频率建议标准：
+  - 被子/床单：建议每周清洗
+  - 枕头/枕套：建议每周清洗
+  - 沙发套：建议每两周清洗
+  - 地毯：建议每周吸尘，每月深度清洁
+  - 毛绒玩具：建议每两周清洗
+
+  以JSON格式返回：
+  {{
+    "overallRisk": "low" | "medium" | "high",
+    "summary": "总结，2-3句话",
+    "items": [
+      {{
+        "location": "场所",
+        "item": "物品名",
+        "material": "材质",
+        "currentFrequency": "用户当前频率",
+        "recommendedFrequency": "建议频率",
+        "riskLevel": "low" | "medium" | "high",
+        "advice": "具体建议",
+        "isCorrect": boolean
+      }}
+    ]
+  }}
+
+  只返回JSON。
+
+domain_qa: |
+  用户在尘螨检查过程中提出了一个问题。
+
+  问题：{question}
+
+  规则：
+  1. 如果是尘螨防控相关的问题，简洁地回答（2-3句话）
+  2. 如果不是尘螨相关的问题，礼貌地说"这个问题不在我的专业范围内，我们继续检查吧"
+  3. 回答后，提醒用户继续当前的检查流程
+
+  当前流程：第 {currentStep} 步 - {currentTarget}
+
+detect_question: |
+  判断用户的这句话是在回答检查流程中的问题，还是在主动提问。
+
+  用户说："{userText}"
+  当前阶段：{phase}
+
+  如果用户在主动提问（比如"尘螨是什么"、"为什么要每周洗"等），返回：{{"isQuestion": true}}
+  如果用户在正常回答流程问题，返回：{{"isQuestion": false}}
+
+  只返回JSON。
