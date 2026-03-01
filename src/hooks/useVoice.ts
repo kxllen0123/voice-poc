@@ -78,15 +78,19 @@ export function useVoice({ onAudioCaptured }: UseVoiceOptions) {
    * Plays a silent WAV to "bless" the persistent Audio element so that
    * future .play() calls succeed even outside gesture context.
    */
-  const unlockAudio = useCallback(() => {
+  const unlockAudio = useCallback(async () => {
     const audio = getAudio();
     audio.src = SILENT_WAV;
     audio.play().then(() => {
       audio.pause();
       audio.currentTime = 0;
-    }).catch(() => {
-      // Unlock attempt failed — will retry on next user gesture
-    });
+    }).catch(() => {});
+
+    // Pre-request mic permission so PTT doesn't trigger a dialog mid-gesture
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {}
   }, [getAudio]);
 
   /** 按下开始录音 */
