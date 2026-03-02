@@ -35,16 +35,22 @@ export function useCamera() {
     const video = videoRef.current;
     if (!video) return null;
 
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const MAX_EDGE = 640;
+    const scale = Math.min(MAX_EDGE / Math.max(vw, vh), 1);
+    const w = Math.round(vw * scale);
+    const h = Math.round(vh * scale);
+
     const canvas = document.createElement("canvas");
-    canvas.width = Math.min(video.videoWidth, 1920);
-    canvas.height = Math.min(video.videoHeight, 1080);
+    canvas.width = w;
+    canvas.height = h;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, w, h);
 
-    // 返回 base64 (去掉 data:image/jpeg;base64, 前缀)
     const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
     return dataUrl.split(",")[1] ?? null;
   }, []);
